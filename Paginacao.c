@@ -17,6 +17,14 @@ diogo
 #include <sys/stat.h>
 #include <unistd.h>
 
+//estrutura toast 
+typedef struct Toast{
+    int memFree; // limpar memoria da pagina
+    int next; // indica onde sera inserido o proximo elemento na página
+    int qtdItems; // quantidade de itens
+}toast;
+
+
 // estrutura de cabeçalho
 typedef struct Header {
     int memFree; // limpar memoria da pagina
@@ -38,6 +46,8 @@ typedef struct Attribute { // atributo da tabela sql, coluna da tabela sql
 
 void getTableName(char *sql, char *name);
 
+void buildToast(char *sql, char *tableName, int qtdPages);
+
 void buildHeader(char *sql, char *tableName, int qtdPages);
 
 void getAllAtributes(char *sql, char *attributes);
@@ -47,7 +57,7 @@ void leArquivo(char *tableName);
 /**
  * Separa a operação do restante da string SQL 
  * - select ou
- * - create ou
+ * - create ou 
  * - insert ou
  * - delete
  */
@@ -179,6 +189,77 @@ void createTable(char *sql) {
  * após armazenar todos as colunas, armazena no início
  * do header.dat a quantidade de colunas e páginas que a tabela possui
  */
+
+
+
+void buildToast(char *sql, char *tableName, int qtdPages) {
+    char fieldName[15], fieldType; //nome e tipo do campo
+    int fieldSize, i = 0; //tamanho do campo e variavel auxiliar
+
+    char sqlCopy[1000], attribute[50], pageName[600];  
+    char *token, *tokenAttribute;
+
+    memset(fieldName, '\0', sizeof(fieldName));  //limpa a string do field name
+
+    strcpy(sqlCopy, sql); //cria um arquivo auxiliar para o script sql
+
+    snprintf(pageName, sizeof(pageName), "%s/toast.dat", tableName); //define o nome do arquvio de cabeçalho
+    FILE *toastPage = fopen(pageName, "rb+"); //instancia o arquvio de cabeçalho em modo de escrita e leitura
+
+    fwrite(&i, sizeof(int), 1, toastPage); //escreve o conteudo de i (0) no inicio do arquivo de cabeçalho   
+
+    // encontra o primeiro parentese na string SQL para e separa em tokens
+    // após o primeiro parentese estarão as definições de atributos da tabela
+    // ex: ( int id, varchar nome )
+    token = strtok(sqlCopy, "(");  
+    token = strtok(NULL, "()[], "); 
+
+    while(token != NULL) { // enquanto existir tokens
+    
+        if(strcmp(token, "char") == 0) { // compara se o token é um char
+            fieldType = 'C'; // define o tipo do atributo como C
+            token = strtok(NULL, "()[], "); // busca o proximo token com o tamanho do atributo char 
+            fieldSize = atoi(token); // converte o token com o tamanho do campo para int
+            token = strtok(NULL, "()[], "); // pega o proximo token 
+            strcpy(fieldName, token); // copia o nome do atributo para o fieldName
+            fwrite(fieldName, 15, 1, toastPage); //escreve no arquivo de cabeçalho o nome do atributo (coluna da tabela sql)
+            fwrite(&fieldSize, sizeof(int), 1, toastPage); // escreve no arquivo o tamanho, em bytes, do atributo sql
+            fwrite(&fieldType, 1, 1, toastPage); // escreve o tipo do atributo sql no arquivo de cabeçalho
+            i++;
+          
+        } else if(strcmp(token, "int") == 0) { // compara se é int
+            fieldType = 'I'; // tipo do atributo 
+            token = strtok(NULL, "()[], "); // move para o proximo token
+            fieldSize = sizeof(int); // tamanho do atributo igual a o tamanho de um inteiro, 4bytes
+            strcpy(fieldName, token); // nome do atributo
+            fwrite(fieldName, 15, 1, toastPage); // escreve o nome do atributo 
+            fwrite(&fieldSize, sizeof(int), 1, toastPage); // escreve o tamanho do arquivo
+            fwrite(&fieldType, 1, 1, toastPage); // escreve o tipo do arquivo
+            i++;
+        } else if(strcmp(token, "varchar") == 0) { // compara se é varchar
+            fieldType = 'V'; // tipo do atributo 
+            token = strtok(NULL, "()[], "); // procura o token com o tamanho do atributo
+            fieldSize = atoi(token); // seta o tamanho do atributo com base no token encontrado
+            token = strtok(NULL, "()[], "); // procura o token com o nome do atributo
+            strcpy(fieldName, token); // seta o fieldName com o token de nome
+            fwrite(fieldName, 15, 1, toastPage); // escreve o nome
+            fwrite(&fieldSize, sizeof(int), 1, toastPage); // escreve o tamanho do atributo
+            fwrite(&fieldType, 1, 1, toastPage); // escreve o tipo do atributo
+            i++;
+        }
+        token = strtok(NULL, "()[], "); // procura o fechamento do script create table
+    }
+
+    fwrite(&qtdPages, sizeof(int), 1, toastPage); // escreve no arquivo de cabeçalho, a quantidade de paginas daquela tabela 
+    fseek(toastPage, 0, SEEK_SET); // move o ponteiro do arquivo para o inicio
+    fwrite(&i, sizeof(int), 1, toastPage); // escreve o numero de atributos daquela tabela
+    fclose(toastPage); // fecha o arquivo de cabeçalho
+
+    leArquivo(tableName); // le o arquivo daquela tabela
+}
+
+
+
 void buildHeader(char *sql, char *tableName, int qtdPages) {
     char fieldName[15], fieldType; //nome e tipo do campo
     int fieldSize, i = 0; //tamanho do campo e variavel auxiliar
@@ -311,6 +392,7 @@ void insertInto(char *sql, int numPage) {
     token = strtok(NULL, "()"); // continua a busca de onde parou na chamada acima
 
     memset(attrSql, '\0', sizeof(attrSql)); //limpa a variavel e seta o final dela
+
     memset(attrSqlCopy, '\0', sizeof(attrSqlCopy)); // limpa a variável e seta o final dela
 
     strcpy(attrSql, token); //copia o token de atributo para a variavel attrSql
@@ -338,6 +420,7 @@ void insertInto(char *sql, int numPage) {
     FILE * page = fopen(pageName, "rb+"); // abre a pagina como modo de leitura e escrita binaria
 
     fread(&head.memFree, sizeof(int), 1, page); // quanto de espaço livre tem disponível naquela pagina
+    printf("%d\n", head.memFree);
     fread(&head.next, sizeof(int), 1, page); // caminho da proxima pagina
     fread(&head.qtdItems, sizeof(int), 1, page); // quantidade de itens naquela pagina
 
@@ -348,6 +431,7 @@ void insertInto(char *sql, int numPage) {
         newItem.offset = head.next - insertSize;
         newItem.totalLen = insertSize;
         newItem.writed = 1;
+
 
       	// calcula posição do próximo valor no cabeçalho da página 
         nextItem = 12 + 12 * head.qtdItems;
