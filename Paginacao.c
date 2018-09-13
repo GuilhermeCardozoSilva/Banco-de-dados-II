@@ -57,7 +57,7 @@ void leArquivo(char *tableName);
 /**
  * Separa a operação do restante da string SQL 
  * - select ou
- * - create ou
+ * - create ou 
  * - insert ou
  * - delete
  */
