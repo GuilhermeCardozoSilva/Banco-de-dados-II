@@ -381,6 +381,7 @@ void insertInto(char *sql, int numPage) {
         token = strtok(NULL, " () ,");
         i++;
     }
+
     int a =0;
     if(a==1){
         snprintf(pageName, sizeof(pageName), "%s/header.dat", tableName); // define o caminho para o cabeçalho da tabela
@@ -416,7 +417,6 @@ void insertInto(char *sql, int numPage) {
 
         // incrementa o tamanho do insert baseado no tipo dos atributos inseridos
         
-        printf("%d\n", insertSize);
         for(int i = 0; i < qtdFields; i++) {        
             if(attributes[i].type == 'C') {
                 insertSize += attributes[i].size;
@@ -660,7 +660,9 @@ void insertInto(char *sql, int numPage) {
                 insertInto(sql, nextPage);
             }
         }
-
+    printf("tamanho livre depois do toast %d\n", toast.memFree);
+    
+    printf("depois de inserido no toast %d\n",insertSize);
     }
 }
 
